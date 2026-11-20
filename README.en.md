@@ -29,12 +29,18 @@ It registers a native **`时间线` (Timeline)** view tab directly beside DSH's 
 
 ## Installation
 
-### Requirements
-- Node.js `>= 20`
-- pnpm `>= 9`
-- [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/dsh) Desktop (`0.2.2+` recommended)
+### Option 1: Install Directly Inside DSH Desktop (Recommended)
 
-### One-Command Desktop Install
+1. Open DeepSeek Harness Desktop → Sidebar **Plugins** → **Add Plugin**.
+2. Paste the GitHub repository URL:
+   ```text
+   https://github.com/yoli-mi/dsh-chronobranch
+   ```
+3. Click **Install**, then **Enable Now** (prebuilt bundles are included, no manual build required).
+
+### Option 2: Local Source Install (For Development)
+
+Requirements: Node.js `>= 20`, pnpm `>= 9`, [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/dsh) Desktop (`0.2.2+` recommended).
 
 ```bash
 git clone https://github.com/yoli-mi/dsh-chronobranch.git

@@ -1,8 +1,8 @@
 # Dependencies
 node_modules/
 
-# Build output (rebuilt cleanly via `pnpm run build`)
-lib/
+# Build artifacts (keep prebuilt lib/index.js & lib/client.js so DSH Plugin Manager can 1-click install directly from GitHub URL)
+lib/*.map
 dist/
 coverage/
 

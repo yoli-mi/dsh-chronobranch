@@ -50,12 +50,18 @@
 
 ## 快速安装
 
-### 环境要求
-- Node.js `>= 20`
-- pnpm `>= 9`
-- [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/dsh) Desktop（推荐 `0.2.2+`）
+### 方式一：在 DSH 桌面端内一键安装（最简单，推荐）
 
-### 方式一：一键脚本安装到 DSH Desktop（推荐）
+1. 打开 DeepSeek Harness Desktop，在左侧边栏点击 **「插件」** → **「添加插件」**。
+2. 直接粘贴本仓库地址：
+   ```text
+   https://github.com/yoli-mi/dsh-chronobranch
+   ```
+3. 点击 **「安装」**，完成后点击 **「立即启用」** 即可生效（无需手动编译）。
+
+### 方式二：本地源码克隆并挂载到 DSH Desktop（适合二次开发）
+
+环境要求：Node.js `>= 20`、pnpm `>= 9`、[DeepSeek Harness (DSH)](https://github.com/deepseek-ai/dsh) Desktop（推荐 `0.2.2+`）。
 
 ```bash
 git clone https://github.com/yoli-mi/dsh-chronobranch.git
@@ -64,7 +70,7 @@ pnpm install
 pnpm run install:desktop
 ```
 
-安装脚本会自动构建 `lib/index.js` 与 `lib/client.js`，备份原 `~/.dsh/profiles/desktop/cordis.patch.yml`，并将插件挂载到桌面端配置中。
+安装脚本会自动构建 `lib/index.js` 与 `lib/client.js`，并将 `dsh-chronobranch` 以标准组合包（Bundle）形式软链并注册到 `~/.dsh/profiles/desktop/package.json`，在 DSH 的「插件」和「设置」中完整展示中文名称、简介、图标与详情文档。
 
 > **生效方式**：完全退出（含系统托盘）并重新启动 DeepSeek Harness Desktop，打开任意会话即可在顶部看到 **`时间线`** 标签页。
 
@@ -74,16 +80,11 @@ pnpm run install:desktop
 pnpm run uninstall:desktop
 ```
 
-### 方式二：使用 `dsh` CLI 安装
+### 方式三：使用 `dsh` CLI 安装
 
 ```bash
-git clone https://github.com/yoli-mi/dsh-chronobranch.git
-cd dsh-chronobranch
-pnpm install
-pnpm run build
-
-# 挂载到桌面端 desktop profile（网页版可改为 --profile web）
-dsh plugin --profile desktop add "$(pwd)"
+# 直接从 GitHub 安装到 desktop profile（网页版可改为 --profile web）
+dsh plugin --profile desktop add https://github.com/yoli-mi/dsh-chronobranch
 ```
 
 ---
