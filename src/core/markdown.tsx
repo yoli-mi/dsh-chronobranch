@@ -5,6 +5,7 @@
  */
 
 import { Fragment, useState, type ReactNode } from 'react';
+import { getChronoMessages, type ChronoLocale } from './i18n';
 import { IconCheck, IconCopy } from './icons';
 
 function isSafeHref(raw: string): boolean {
@@ -91,7 +92,17 @@ function renderLinesWithBreaks(lines: string[], keyPrefix: string): ReactNode {
   ));
 }
 
-function CodeBlockView({ lang, code }: { readonly lang: string; readonly code: string }) {
+function CodeBlockView({
+  lang,
+  code,
+  copyLabel,
+  copiedLabel,
+}: {
+  readonly lang: string;
+  readonly code: string;
+  readonly copyLabel: string;
+  readonly copiedLabel: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = (e: React.MouseEvent) => {
@@ -107,7 +118,7 @@ function CodeBlockView({ lang, code }: { readonly lang: string; readonly code: s
         <span>{lang || 'text'}</span>
         <button type="button" className="cb-code-copy" onClick={handleCopy}>
           {copied ? <IconCheck size="xs" /> : <IconCopy size="xs" />}
-          <span>{copied ? '已复制' : '复制'}</span>
+          <span>{copied ? copiedLabel : copyLabel}</span>
         </button>
       </div>
       <pre>{code}</pre>
@@ -138,8 +149,17 @@ function isBlockStarter(line: string): boolean {
   return false;
 }
 
-export function ChronoMarkdown({ text, className }: { readonly text: string; readonly className?: string }) {
+export function ChronoMarkdown({
+  text,
+  className,
+  locale = 'zh',
+}: {
+  readonly text: string;
+  readonly className?: string;
+  readonly locale?: ChronoLocale;
+}) {
   if (!text) return null;
+  const msg = getChronoMessages(locale);
 
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const blocks: ReactNode[] = [];
@@ -166,7 +186,15 @@ export function ChronoMarkdown({ text, className }: { readonly text: string; rea
         i += 1;
       }
       if (i < lines.length) i += 1; // skip closing fence
-      blocks.push(<CodeBlockView key={`b-${blockKey++}`} lang={lang} code={codeLines.join('\n')} />);
+      blocks.push(
+        <CodeBlockView
+          key={`b-${blockKey++}`}
+          lang={lang}
+          code={codeLines.join('\n')}
+          copyLabel={msg.copy}
+          copiedLabel={msg.copied}
+        />,
+      );
       continue;
     }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react';
 import { AssistantContentBody } from './AssistantContent';
+import { getChronoMessages, type ChronoLocale } from './i18n';
 import {
   IconCheck,
   IconClose,
@@ -60,6 +61,8 @@ export interface ChronoCanvasProps {
   readonly actions: ChronoActions;
   /** Live theme synced directly from host (DSH `data-ds-dark-theme`). */
   readonly theme?: 'light' | 'dark';
+  /** Active UI locale synced from DSH (`zh` or `en`). */
+  readonly locale?: ChronoLocale;
   /** When true, strictly share DSH's single unified native bottom composer (never render a second input box). */
   readonly useNativeComposer?: boolean;
   /** User-configurable keyboard shortcut display map (synced from DSH native Settings -> 快捷键). */
@@ -111,6 +114,7 @@ export function ChronoCanvas({
   graph,
   actions,
   theme = 'light',
+  locale = 'zh',
   useNativeComposer = false,
   shortcuts: hostShortcuts,
   managedShortcuts = false,
@@ -122,6 +126,9 @@ export function ChronoCanvas({
   workspaceName,
   workspaceSessions,
 }: ChronoCanvasProps) {
+  const msg = getChronoMessages(locale);
+  const tipWithKey = (label: string, binding: string | undefined) =>
+    binding ? `${label} (${formatShortcutLabel(binding)})` : label;
   const savedView = canvasViewCache.get(graph.rootTrackId);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [activeTrackId, setActiveTrackId] = useState<string>(graph.activeTrackId || graph.rootTrackId);
@@ -200,10 +207,10 @@ export function ChronoCanvas({
       }
       actions.onSelectTrack(trackId);
       if (changed) {
-        showToast(`已切换发送目标至「${tr.title}」`);
+        showToast(msg.toastSwitchedTarget(tr.title));
       }
     },
-    [graph, activeTrackId, actions, showToast],
+    [graph, activeTrackId, actions, showToast, msg],
   );
 
   // Keep activeTrackId synced when external active session changes
@@ -274,9 +281,9 @@ export function ChronoCanvas({
       x: w * 0.42 - (rect.x + rect.w / 2) * zoom,
       y: h * 0.36 - rect.axisY * zoom,
     });
-    showToast(`已定位至 ${node.turnLabel} · ${node.title}`);
+    showToast(msg.toastLocated(node.turnLabel, node.title));
     onFocusConsumed?.(focusRequest.seq);
-  }, [focusRequest, graph.nodes, layout.nodeRects, zoom, getViewportSize, showToast, onFocusConsumed]);
+  }, [focusRequest, graph.nodes, layout.nodeRects, zoom, getViewportSize, showToast, msg, onFocusConsumed]);
 
   const fitToView = useCallback(() => {
     const { w, h } = getViewportSize();
@@ -302,7 +309,7 @@ export function ChronoCanvas({
     (nodeId: string) => {
       const node = graph.nodes[nodeId];
       if (!node || node.microSteps.length === 0) {
-        showToast('当前轮次没有工具调用或思考步骤');
+        showToast(msg.toastNoMicroSteps);
         return;
       }
       setMicroOpenNodeIds((prev) => {
@@ -313,7 +320,7 @@ export function ChronoCanvas({
       });
       setSelectedNodeId(nodeId);
     },
-    [graph.nodes, showToast],
+    [graph.nodes, showToast, msg],
   );
 
   const startFork = useCallback(
@@ -322,22 +329,22 @@ export function ChronoCanvas({
       if (!node || forkingNodeId) return;
       if (node.placeholder) {
         actions.onSelectTrack(node.trackId);
-        showToast('正在加载该对话历史，加载完成后即可分叉');
+        showToast(msg.toastLoadingBeforeFork);
         return;
       }
       if (node.forkStarter) {
         actions.onSelectTrack(node.trackId);
         const nativeInput = document.querySelector('[data-composer-seat] textarea') as HTMLTextAreaElement | null;
         nativeInput?.focus();
-        showToast('已就绪，请直接在底部输入框发送新分支首条消息');
+        showToast(msg.toastForkReadyFocus);
         return;
       }
       if (!graph.capabilities.canFork) {
-        showToast('当前平台暂不支持直接分叉');
+        showToast(msg.toastForkUnsupported);
         return;
       }
       if (node.status === 'streaming') {
-        showToast('当前轮次正在生成中，请等待本轮完成后分叉或从上一轮分叉');
+        showToast(msg.toastWaitForTurn);
         return;
       }
       setSelectedNodeId(nodeId);
@@ -349,10 +356,10 @@ export function ChronoCanvas({
           const childId = await actions.onForkNode(node.trackId, node);
           if (childId) {
             setActiveTrackId(childId);
-            showToast(`已从 ${node.turnLabel} 创建分支，请直接在底部输入框发送消息`);
+            showToast(msg.toastForkCreated(node.turnLabel));
           }
         } catch (err) {
-          showToast(`创建分支失败：${err instanceof Error ? err.message : String(err)}`);
+          showToast(msg.toastForkFailed(err instanceof Error ? err.message : String(err)));
         } finally {
           setForkingNodeId(null);
         }
@@ -361,9 +368,9 @@ export function ChronoCanvas({
 
       setPendingForkNodeId(nodeId);
       setTimeout(() => composerRef.current?.focus(), 0);
-      showToast(`准备从 ${node.turnLabel} 拉出新分支，输入并发送即可创建独立泳道`);
+      showToast(msg.toastForkPending(node.turnLabel));
     },
-    [graph.nodes, graph.capabilities.canFork, forkingNodeId, useNativeComposer, actions, showToast],
+    [graph.nodes, graph.capabilities.canFork, forkingNodeId, useNativeComposer, actions, showToast, msg],
   );
 
   const pinnedTileIdSet = pinnedTileNodeIds ?? new Set<string>();
@@ -374,19 +381,19 @@ export function ChronoCanvas({
       if (!node) return;
       if (node.placeholder) {
         actions.onSelectTrack(node.trackId);
-        showToast('正在加载该分支历史，加载完成后即可贴为磁贴');
+        showToast(msg.toastLoadingBeforeTile);
         return;
       }
       if (!onToggleTile) return;
       const track = graph.tracks[node.trackId];
       const result = onToggleTile(node, track?.title ?? 'DSH AGENT', track?.color ?? '#27272a');
       if (result === 'pinned') {
-        showToast(`已将 ${node.turnLabel} 贴为 DSH 磁贴（切换对话或模式仍保留在屏幕上，支持磁吸并排）`);
+        showToast(msg.toastTilePinned(node.turnLabel));
       } else {
-        showToast(`已取消磁贴「${node.turnLabel}」`);
+        showToast(msg.toastTileUnpinned(node.turnLabel));
       }
     },
-    [graph.nodes, graph.tracks, actions, onToggleTile, showToast],
+    [graph.nodes, graph.tracks, actions, onToggleTile, showToast, msg],
   );
 
   const openCherryModal = useCallback(
@@ -397,10 +404,13 @@ export function ChronoCanvas({
       const last = tNodes[tNodes.length - 1];
       setCherryTrackId(trackId);
       setCherrySummary(
-        `【来自「${tr.title}」的提炼结论】\n${last ? last.aiSummary || last.aiFullText.slice(0, 260) : '已完成支线探索与验证，核心结论确认可行，请结合主线上下文继续推进。'}`,
+        msg.cherryDefaultSummary(
+          tr.title,
+          last ? last.aiSummary || last.aiFullText.slice(0, 260) : msg.cherryFallbackExcerpt,
+        ),
       );
     },
-    [graph],
+    [graph, msg],
   );
 
   const handleConfirmCherryPick = useCallback(async () => {
@@ -419,11 +429,11 @@ export function ChronoCanvas({
       actions.onSetTrackMeta(cherryTrackId, { status: 'adopted' });
       setCherryTrackId(null);
       setActiveTrackId(targetTrackId);
-      showToast('已将分支结论注入父线上下文并建立回流连线');
+      showToast(msg.toastMerged);
     } catch (err) {
-      showToast(`回流失败：${err instanceof Error ? err.message : String(err)}`);
+      showToast(msg.toastMergeFailed(err instanceof Error ? err.message : String(err)));
     }
-  }, [cherryTrackId, cherrySummary, graph, actions, showToast]);
+  }, [cherryTrackId, cherrySummary, graph, actions, showToast, msg]);
 
   const handleSend = useCallback(async () => {
     const text = composerText.trim();
@@ -438,7 +448,7 @@ export function ChronoCanvas({
           setComposerText('');
           if (childTrackId) {
             setActiveTrackId(childTrackId);
-            showToast('已通过原生 fork 拉出新时间线分支');
+            showToast(msg.toastForkSent);
           }
         }
       } else {
@@ -447,11 +457,11 @@ export function ChronoCanvas({
         setComposerText('');
       }
     } catch (err) {
-      showToast(`发送失败：${err instanceof Error ? err.message : String(err)}`);
+      showToast(msg.toastSendFailed(err instanceof Error ? err.message : String(err)));
     } finally {
       setSending(false);
     }
-  }, [composerText, sending, pendingForkNodeId, graph, actions, activeTrackId, showToast]);
+  }, [composerText, sending, pendingForkNodeId, graph, actions, activeTrackId, showToast, msg]);
 
   const dispatchShortcutAction = useCallback(
     (action: ShortcutAction) => {
@@ -869,13 +879,13 @@ export function ChronoCanvas({
         id: ml.id,
         x: gx,
         y: (src.axisY + dst.axisY) / 2,
-        label: ml.label || 'Cherry-pick 回流',
+        label: ml.label || msg.cherryMergePill,
         link: ml,
       });
     });
 
     return { edgeElements: edges, mergeBadges: badges };
-  }, [layout, graph, theme]);
+  }, [layout, graph, theme, msg.cherryMergePill]);
 
   return (
     <div
@@ -889,9 +899,9 @@ export function ChronoCanvas({
         <div className="cb-hud-group">
           {actions.onClose && (
             <>
-              <button className="cb-btn-mode" onClick={actions.onClose} title="切回原生线性对话框">
+              <button className="cb-btn-mode" onClick={actions.onClose} title={msg.linearChatTip}>
                 <IconLinear />
-                <span>线性对话</span>
+                <span>{msg.linearChat}</span>
               </button>
               <div className="cb-divider" />
             </>
@@ -899,18 +909,18 @@ export function ChronoCanvas({
           <button
             className={`cb-hud-btn ${tier === 'l1' ? 'cb-active' : ''}`}
             onClick={() => setZoom(0.48)}
-            title={`L1 极简点线鸟瞰 (${formatShortcutLabel(activeShortcuts.zoomL1)})`}
+            title={tipWithKey(msg.zoomL1Tip, activeShortcuts.zoomL1)}
           >
             <IconZoomL1 />
-            <span>鸟瞰</span>
+            <span>{msg.zoomL1}</span>
           </button>
           <button
             className={`cb-hud-btn ${tier === 'l2' ? 'cb-active' : ''}`}
             onClick={() => setZoom(0.92)}
-            title={`L2 点线平衡阅读 (${formatShortcutLabel(activeShortcuts.zoomL2)})`}
+            title={tipWithKey(msg.zoomL2Tip, activeShortcuts.zoomL2)}
           >
             <IconZoomL2 />
-            <span>点线</span>
+            <span>{msg.zoomL2}</span>
           </button>
           <button
             className={`cb-hud-btn ${tier === 'l3' ? 'cb-active' : ''}`}
@@ -918,13 +928,13 @@ export function ChronoCanvas({
               setZoom(1.12);
               if (selectedNodeId) setExpandedNodeIds((prev) => new Set(prev).add(selectedNodeId));
             }}
-            title={`L3 展开完整对话 (${formatShortcutLabel(activeShortcuts.zoomL3)})`}
+            title={tipWithKey(msg.zoomL3Tip, activeShortcuts.zoomL3)}
           >
             <IconZoomL3 />
-            <span>展开</span>
+            <span>{msg.zoomL3}</span>
           </button>
           <span className="cb-zoom-pill">{Math.round(zoom * 100)}%</span>
-          <button className="cb-hud-btn" onClick={fitToView} title="自适应全览画布">
+          <button className="cb-hud-btn" onClick={fitToView} title={msg.fitViewTip}>
             <IconFit />
           </button>
         </div>
@@ -936,7 +946,7 @@ export function ChronoCanvas({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索节点或代码..."
+              placeholder={msg.searchPlaceholder}
             />
           </div>
           {workspaceSessions && actions.onLinkSession && (
@@ -952,11 +962,11 @@ export function ChronoCanvas({
                   setLinkSearch('');
                   setLinkModalOpen(true);
                 }}
-                title="关联同一工作区下的任意对话，点开其中任一对话的时间线均可查看全部"
+                title={msg.linkChatsTip}
               >
                 <IconLink />
                 <span>
-                  关联对话
+                  {msg.linkChats}
                   {workspaceSessions.filter((s) => s.linkKind !== 'none').length > 1
                     ? ` · ${workspaceSessions.filter((s) => s.linkKind !== 'none').length}`
                     : ''}
@@ -968,18 +978,18 @@ export function ChronoCanvas({
           <button
             className={`cb-hud-btn ${showSubagents ? 'cb-active' : ''}`}
             onClick={() => setShowSubagents((v) => !v)}
-            title="显示或隐藏 Agent 派生泳道"
+            title={msg.subagentsTip}
           >
             <IconSubagent />
-            <span>Agent 派生</span>
+            <span>{msg.subagents}</span>
           </button>
           <button
             className={`cb-hud-btn ${hideDeadEnds ? 'cb-active' : ''}`}
             onClick={() => setHideDeadEnds((v) => !v)}
-            title="隐藏已折叠的死胡同分支"
+            title={msg.hideDeadEndsTip}
           >
             <IconEyeOff />
-            <span>隐死胡同</span>
+            <span>{msg.hideDeadEnds}</span>
           </button>
         </div>
       </header>
@@ -1036,9 +1046,7 @@ export function ChronoCanvas({
                   onClick={() => actions.onSetTrackMeta(t.id, { collapsed: false })}
                 >
                   <span className="cb-dot" style={{ background: '#a1a1aa' }} />
-                  <span>
-                    <strong>{t.title}</strong> · 已折叠 ({tNodes.length} 轮 · 点击展开)
-                  </span>
+                  <span>{msg.collapsedTrack(t.title, tNodes.length)}</span>
                 </button>
               );
             }
@@ -1069,16 +1077,16 @@ export function ChronoCanvas({
                 <div className="cb-track-meta">
                   <span className={`cb-tag ${t.status === 'adopted' ? 'cb-tag-adopted' : ''}`}>
                     {t.kind === 'main'
-                      ? '主线'
+                      ? msg.trackMain
                       : t.kind === 'linked-peer'
-                        ? '已关联'
+                        ? msg.trackLinked
                         : t.kind === 'agent-subagent'
-                          ? 'Agent 派生'
+                          ? msg.trackSubagent
                           : t.status === 'adopted'
-                            ? '已采纳'
+                            ? msg.trackAdopted
                             : t.status === 'dead-end'
-                              ? '死胡同'
-                              : '分支'}
+                              ? msg.trackDeadEnd
+                              : msg.trackBranch}
                   </span>
                   {t.hasMore && graph.capabilities.canLoadOlder && (
                     <button
@@ -1088,39 +1096,39 @@ export function ChronoCanvas({
                         void actions.onLoadOlder(t.id);
                       }}
                     >
-                      {t.loadingOlder ? '加载中…' : '加载更早'}
+                      {t.loadingOlder ? msg.loading : msg.loadOlder}
                     </button>
                   )}
                   {t.kind === 'linked-peer' && actions.onUnlinkSession && (
                     <button
                       className="cb-track-mini-btn"
-                      title="取消此对话的时间线关联"
+                      title={msg.unlinkTip}
                       onClick={(e) => {
                         e.stopPropagation();
                         actions.onUnlinkSession?.(t.id);
-                        showToast(`已取消「${t.title}」的时间线关联`);
+                        showToast(msg.toastUnlinked(t.title));
                       }}
                     >
                       <IconUnlink />
-                      <span>断开</span>
+                      <span>{msg.unlink}</span>
                     </button>
                   )}
                   {t.kind === 'human-branch' && (
                     <>
                       <button
                         className="cb-track-mini-btn"
-                        title="提炼结论回流主线"
+                        title={msg.cherryPickTip}
                         onClick={(e) => {
                           e.stopPropagation();
                           openCherryModal(t.id);
                         }}
                       >
                         <IconMerge />
-                        <span>回流</span>
+                        <span>{msg.cherryPick}</span>
                       </button>
                       <button
                         className="cb-track-mini-btn"
-                        title="折叠为细虚线"
+                        title={msg.foldTip}
                         onClick={(e) => {
                           e.stopPropagation();
                           actions.onSetTrackMeta(t.id, { status: 'dead-end', collapsed: true });
@@ -1128,7 +1136,7 @@ export function ChronoCanvas({
                         }}
                       >
                         <IconFold />
-                        <span>折叠</span>
+                        <span>{msg.fold}</span>
                       </button>
                     </>
                   )}
@@ -1162,7 +1170,7 @@ export function ChronoCanvas({
               const microSubAxis = isMicroOpen ? (
                 <div className="cb-micro-subaxis">
                   <div className="cb-micro-head">
-                    <span>微观执行小轴 · 点击查看 Diff / 日志</span>
+                    <span>{msg.microAxisHead}</span>
                     <button
                       style={{ fontSize: 10.5, color: 'var(--cb-text-muted)' }}
                       onClick={(e) => {
@@ -1170,7 +1178,7 @@ export function ChronoCanvas({
                         toggleMicro(n.id);
                       }}
                     >
-                      收起 (E)
+                      {msg.collapse}
                     </button>
                   </div>
                   <div className="cb-micro-dotline">
@@ -1208,14 +1216,14 @@ export function ChronoCanvas({
                 n.microSteps.length > 0 ? (
                   <button
                     className={`cb-micro-trigger ${isMicroOpen ? 'cb-open' : ''}`}
-                    title="展开/收起微观执行小轴 (E)"
+                    title={tipWithKey(msg.microAxisTip, activeShortcuts.toggleMicro)}
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleMicro(n.id);
                     }}
                   >
                     <IconMicroAxis />
-                    <span>微观小轴</span>
+                    <span>{msg.microAxis}</span>
                   </button>
                 ) : (
                   <span />
@@ -1226,23 +1234,19 @@ export function ChronoCanvas({
                   {isExpanded && !n.placeholder && (
                     <button
                       className={`cb-act-btn ${isTilePinned ? 'cb-act-active' : ''}`}
-                      title={`悬挂为屏幕磁贴，切换对话/模式不消失${activeShortcuts.pinTile ? ` (${formatShortcutLabel(activeShortcuts.pinTile)})` : ''}`}
+                      title={tipWithKey(msg.tileTip, activeShortcuts.pinTile)}
                       onClick={(e) => {
                         e.stopPropagation();
                         void toggleTile(n.id);
                       }}
                     >
                       <IconMagnet size="xs" />
-                      <span>磁贴</span>
+                      <span>{msg.tile}</span>
                     </button>
                   )}
                   <button
                     className="cb-act-btn"
-                    title={
-                      isExpanded
-                        ? `收起为点线态${activeShortcuts.toggleExpand ? ` (${formatShortcutLabel(activeShortcuts.toggleExpand)})` : ''}`
-                        : `展开完整对话${activeShortcuts.toggleExpand ? ` (${formatShortcutLabel(activeShortcuts.toggleExpand)})` : ''}`
-                    }
+                    title={tipWithKey(isExpanded ? msg.collapseTip : msg.expandTip, activeShortcuts.toggleExpand)}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (n.placeholder) {
@@ -1253,20 +1257,20 @@ export function ChronoCanvas({
                     }}
                   >
                     {isExpanded ? <IconCollapse /> : <IconExpand />}
-                    <span>{isExpanded ? '收起' : '展开'}</span>
+                    <span>{isExpanded ? msg.collapse : msg.expand}</span>
                   </button>
                   {!isSub && !n.placeholder && graph.capabilities.canFork && (
                     <button
                       className="cb-act-btn"
                       disabled={forkingNodeId === n.id}
-                      title={`从此处拉出新分支时间线${activeShortcuts.forkNode ? ` (${formatShortcutLabel(activeShortcuts.forkNode)})` : ''}`}
+                      title={tipWithKey(msg.forkTip, activeShortcuts.forkNode)}
                       onClick={(e) => {
                         e.stopPropagation();
                         void startFork(n.id);
                       }}
                     >
                       <IconFork />
-                      <span>{forkingNodeId === n.id ? '分叉中…' : '分叉'}</span>
+                      <span>{forkingNodeId === n.id ? msg.forking : msg.fork}</span>
                     </button>
                   )}
                 </div>
@@ -1330,23 +1334,20 @@ export function ChronoCanvas({
                     <span className="cb-meta-turn">{n.turnLabel}</span>
                     <span className="cb-meta-time">{n.timestamp}</span>
                     {n.pinned && (
-                      <span className="cb-meta-tag" title="已标记重点">
+                      <span className="cb-meta-tag" title={msg.pinImportantTip}>
                         <IconPin />
                       </span>
                     )}
                     {isTilePinned && (
-                      <span className="cb-meta-tag cb-meta-tile" title="已悬挂为屏幕磁贴">
+                      <span className="cb-meta-tag cb-meta-tile" title={msg.pinnedTagTip}>
                         <IconMagnet size="xs" />
-                        <span>已贴</span>
+                        <span>{msg.pinnedTag}</span>
                       </span>
                     )}
-                    {isForkOrigin && <span className="cb-meta-tag">分叉点</span>}
+                    {isForkOrigin && <span className="cb-meta-tag">{msg.forkOriginTag}</span>}
                   </div>
 
-                  <div
-                    className="cb-dot-anchor"
-                    title="单击选中 / 双击展开完整对话 / Shift+点击贴为屏幕磁贴"
-                  >
+                  <div className="cb-dot-anchor" title={msg.dotTip}>
                     <span className="cb-dot-core" />
                   </div>
 
@@ -1367,7 +1368,7 @@ export function ChronoCanvas({
                           <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                             <button
                               className="cb-act-btn"
-                              title="标记/取消重点"
+                              title={msg.pinImportantTip}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 actions.onTogglePin(n.id);
@@ -1382,7 +1383,7 @@ export function ChronoCanvas({
                           {n.mergedFrom && (
                             <div className="cb-merge-note" style={{ margin: 0 }}>
                               <IconMerge />
-                              <span>已吸收回流：{n.mergedFrom.trackTitle}</span>
+                              <span>{msg.mergedFrom(n.mergedFrom.trackTitle)}</span>
                             </div>
                           )}
                           <div className="cb-bubble cb-bubble-user">
@@ -1390,20 +1391,20 @@ export function ChronoCanvas({
                               <span>YOU</span>
                               <span>{n.timestamp}</span>
                             </div>
-                            <ChronoMarkdown text={n.userText} />
+                            <ChronoMarkdown text={n.userText} locale={locale} />
                           </div>
                           <div className="cb-bubble cb-bubble-ai">
                             <div className="cb-bubble-role">
                               <span>{isSub ? 'SUBAGENT' : 'DSH AGENT'}</span>
                               <span>
                                 {n.status === 'streaming'
-                                  ? '生成中…'
+                                  ? msg.streaming
                                   : n.stats.durationMs
                                     ? `${(n.stats.durationMs / 1000).toFixed(1)}s`
                                     : ''}
                               </span>
                             </div>
-                            <AssistantContentBody node={n} />
+                            <AssistantContentBody node={n} locale={locale} />
                           </div>
                         </div>
 
@@ -1415,17 +1416,17 @@ export function ChronoCanvas({
                         {/* Interactive resize handles (timeline auto-reflows live) */}
                         <div
                           className="cb-resize-handle cb-resize-e"
-                          title="向右拖动调整宽度"
+                          title={msg.resizeETip}
                           onMouseDown={(e) => startSheetResize(e, n.id, 'e')}
                         />
                         <div
                           className="cb-resize-handle cb-resize-s"
-                          title="向下拖动调整高度"
+                          title={msg.resizeSTip}
                           onMouseDown={(e) => startSheetResize(e, n.id, 's')}
                         />
                         <div
                           className="cb-resize-handle cb-resize-se"
-                          title="拖动自由调整大小（双击恢复默认尺寸）"
+                          title={msg.resizeSETip}
                           onMouseDown={(e) => startSheetResize(e, n.id, 'se')}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
@@ -1440,7 +1441,7 @@ export function ChronoCanvas({
                       {n.mergedFrom && (
                         <div className="cb-merge-note">
                           <IconMerge />
-                          <span>已吸收：{n.mergedFrom.trackTitle}</span>
+                          <span>{msg.mergedShort(n.mergedFrom.trackTitle)}</span>
                         </div>
                       )}
                       <div className="cb-title">{n.title}</div>
@@ -1474,16 +1475,14 @@ export function ChronoCanvas({
                 <span className="cb-meta-turn" style={{ color: '#059669' }}>
                   NEW
                 </span>
-                <span className="cb-meta-time">待发送</span>
+                <span className="cb-meta-time">{msg.pendingForkBadge}</span>
               </div>
               <div className="cb-dot-anchor">
                 <span className="cb-dot-core" />
               </div>
               <div className="cb-editorial" style={{ borderLeftStyle: 'dashed' }}>
-                <div className="cb-title">新分支起点</div>
-                <div className="cb-summary">
-                  分叉自 {pendingForkNode.turnLabel}（完整继承至此节点前缀上下文）。在下方输入首条问题发送即刻生成新泳道。
-                </div>
+                <div className="cb-title">{msg.pendingForkTitle}</div>
+                <div className="cb-summary">{msg.pendingForkSummary(pendingForkNode.turnLabel)}</div>
               </div>
             </div>
           )}
@@ -1501,7 +1500,7 @@ export function ChronoCanvas({
                     <IconFork />
                   </span>
                   <span>
-                    从 <strong>{pendingForkNode.turnLabel}</strong> 拉出新分支
+                    {msg.standaloneForkPrefix} <strong>{pendingForkNode.turnLabel}</strong>
                   </span>
                 </>
               ) : (
@@ -1510,9 +1509,9 @@ export function ChronoCanvas({
                     className="cb-dot"
                     style={{ background: activeTrack ? resolveTrackStroke(activeTrack, theme) : '#27272a' }}
                   />
-                  <span>{activeTrack?.title ?? '主线'}</span>
+                  <span>{activeTrack?.title ?? msg.trackMain}</span>
                   <span style={{ color: 'var(--cb-text-faint)', fontWeight: 400 }}>
-                    · {activeTail ? `${activeTail.turnLabel} 后继续` : '开始新对话'}
+                    {activeTail ? msg.standaloneContinueAfter(activeTail.turnLabel) : msg.standaloneStartNew}
                   </span>
                 </>
               )}
@@ -1523,7 +1522,7 @@ export function ChronoCanvas({
                 style={{ color: 'var(--cb-rose)', padding: '2px 6px' }}
                 onClick={() => setPendingForkNodeId(null)}
               >
-                取消分叉 (Esc)
+                {msg.standaloneCancelFork}
               </button>
             )}
           </div>
@@ -1537,8 +1536,8 @@ export function ChronoCanvas({
               onChange={(e) => setComposerText(e.target.value)}
               placeholder={
                 pendingForkNode
-                  ? `输入新分支首条消息（原生 fork 继承至 ${pendingForkNode.turnLabel}）...`
-                  : `在「${activeTrack?.title ?? '当前轨道'}」继续对话（Enter 发送，支持 / 斜杠命令）...`
+                  ? msg.standaloneForkPlaceholder(pendingForkNode.turnLabel)
+                  : msg.standaloneSendPlaceholder(activeTrack?.title ?? msg.trackMain)
               }
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -1551,10 +1550,10 @@ export function ChronoCanvas({
               <button
                 className="cb-btn-stop"
                 onClick={() => void actions.onStop(activeTrack.id)}
-                title="停止当前生成"
+                title={msg.stopTip}
               >
                 <IconStop />
-                <span>停止</span>
+                <span>{msg.stop}</span>
               </button>
             )}
             <button
@@ -1562,7 +1561,7 @@ export function ChronoCanvas({
               disabled={sending || !composerText.trim()}
               onClick={() => void handleSend()}
             >
-              <span>{sending ? '发送中' : '发送'}</span>
+              <span>{sending ? msg.sending : msg.send}</span>
               <IconSend />
             </button>
           </div>
@@ -1582,7 +1581,7 @@ export function ChronoCanvas({
               ) : (
                 <>
                   <IconMerge />
-                  <span>Cherry-pick 回流摘要</span>
+                  <span>{msg.inspectorMergeTitle}</span>
                 </>
               )}
             </strong>
@@ -1594,8 +1593,7 @@ export function ChronoCanvas({
             {inspector.kind === 'step' && inspector.step && inspector.node && (
               <>
                 <div style={{ fontSize: 11.5, color: 'var(--cb-text-muted)', marginBottom: 10 }}>
-                  轮次：<strong>{inspector.node.turnLabel}</strong> · {inspector.node.title}
-                  {inspector.step.duration ? ` · ${inspector.step.duration}` : ''}
+                  {msg.inspectorTurnMeta(inspector.node.turnLabel, inspector.node.title, inspector.step.duration)}
                 </div>
                 {inspector.step.diff ? (
                   <div className="cb-code-block">
@@ -1623,7 +1621,7 @@ export function ChronoCanvas({
                     <div className="cb-code-head">
                       <span>{inspector.step.kind.toUpperCase()}</span>
                     </div>
-                    <pre style={{ whiteSpace: 'pre-wrap' }}>{inspector.step.detail || '（无详细输出）'}</pre>
+                    <pre style={{ whiteSpace: 'pre-wrap' }}>{inspector.step.detail || msg.inspectorEmpty}</pre>
                   </div>
                 )}
               </>
@@ -1632,7 +1630,7 @@ export function ChronoCanvas({
             {inspector.kind === 'merge' && inspector.merge && (
               <div className="cb-bubble cb-bubble-user">
                 <div className="cb-bubble-role">
-                  <span>提炼并注入主线的结论上下文</span>
+                  <span>{msg.inspectorMergeRole}</span>
                 </div>
                 <div>{inspector.merge.summary}</div>
               </div>
@@ -1653,7 +1651,7 @@ export function ChronoCanvas({
             <div className="cb-modal-head">
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <IconMerge />
-                <strong style={{ fontSize: 13.5 }}>Cherry-pick · 提炼分支结论回流主线</strong>
+                <strong style={{ fontSize: 13.5 }}>{msg.cherryModalTitle}</strong>
               </div>
               <button className="cb-hud-btn" style={{ padding: '3px 6px' }} onClick={() => setCherryTrackId(null)}>
                 <IconClose />
@@ -1661,12 +1659,14 @@ export function ChronoCanvas({
             </div>
             <div style={{ padding: '16px 18px' }}>
               <div style={{ fontSize: 12.5, color: 'var(--cb-text-secondary)' }}>
-                来源分支：<strong>{graph.tracks[cherryTrackId]?.title}</strong> → 将注入{' '}
-                <strong>{graph.tracks[graph.rootTrackId]?.title ?? '主线'}</strong>
+                {msg.cherrySourceLabel}
+                <strong>{graph.tracks[cherryTrackId]?.title}</strong> {msg.cherryInjectLabel}
+                <strong>
+                  {graph.tracks[graph.tracks[cherryTrackId]?.parentTrackId ?? graph.rootTrackId]?.title ??
+                    msg.trackMain}
+                </strong>
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--cb-text-muted)', marginTop: 6 }}>
-                编辑提炼后的结论摘要，确认后将发送至主线会话并在画布上生成回流连线：
-              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--cb-text-muted)', marginTop: 6 }}>{msg.cherryDesc}</div>
               <textarea
                 className="cb-cherry-textarea"
                 value={cherrySummary}
@@ -1674,10 +1674,10 @@ export function ChronoCanvas({
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
                 <button className="cb-btn-secondary" onClick={() => setCherryTrackId(null)}>
-                  取消
+                  {msg.cherryCancel}
                 </button>
                 <button className="cb-btn-primary" onClick={() => void handleConfirmCherryPick()}>
-                  确认回流至主线
+                  {msg.cherryConfirm}
                 </button>
               </div>
             </div>
@@ -1697,7 +1697,7 @@ export function ChronoCanvas({
             <div className="cb-modal-head">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <IconLink />
-                <strong style={{ fontSize: 13.5 }}>工作区时间线关联</strong>
+                <strong style={{ fontSize: 13.5 }}>{msg.linkModalTitle}</strong>
                 {workspaceName && <span className="cb-tag">{workspaceName}</span>}
               </div>
               <button className="cb-hud-btn" style={{ padding: '3px 6px' }} onClick={() => setLinkModalOpen(false)}>
@@ -1705,16 +1705,14 @@ export function ChronoCanvas({
               </button>
             </div>
             <div className="cb-link-body">
-              <div className="cb-link-desc">
-                勾选同一工作区下的任意对话进行时间线关联。打开其中任意一个对话的时间线，均可同时查看全部已关联的时间线；分支对话默认与原对话关联。
-              </div>
+              <div className="cb-link-desc">{msg.linkModalDesc}</div>
               <div className="cb-link-search">
                 <IconSearch />
                 <input
                   type="text"
                   value={linkSearch}
                   onChange={(e) => setLinkSearch(e.target.value)}
-                  placeholder="筛选当前工作区下的对话..."
+                  placeholder={msg.linkSearchPlaceholder}
                 />
               </div>
               <div className="cb-link-list">
@@ -1731,7 +1729,7 @@ export function ChronoCanvas({
                     const checked = isSelf || isFork || isManual;
                     const locked = isSelf || isFork;
                     const timeStr = item.updatedAt
-                      ? new Date(item.updatedAt).toLocaleString('zh-CN', {
+                      ? new Date(item.updatedAt).toLocaleString(locale === 'en' ? 'en-US' : 'zh-CN', {
                           month: '2-digit',
                           day: '2-digit',
                           hour: '2-digit',
@@ -1761,29 +1759,26 @@ export function ChronoCanvas({
                         </span>
                         <span className="cb-link-badge-col">
                           {isSelf ? (
-                            <span className="cb-tag cb-tag-adopted">当前对话</span>
+                            <span className="cb-tag cb-tag-adopted">{msg.linkCurrent}</span>
                           ) : isFork ? (
-                            <span className="cb-tag">分支默认关联</span>
+                            <span className="cb-tag">{msg.linkDefaultFork}</span>
                           ) : isManual ? (
-                            <span className="cb-tag cb-tag-linked">已关联</span>
+                            <span className="cb-tag cb-tag-linked">{msg.linkManual}</span>
                           ) : (
-                            <span className="cb-link-add-hint">点击关联</span>
+                            <span className="cb-link-add-hint">{msg.linkClickToAdd}</span>
                           )}
                         </span>
                       </button>
                     );
                   })}
-                {workspaceSessions.length <= 1 && (
-                  <div className="cb-link-empty">当前工作区下暂无其他可关联的对话</div>
-                )}
+                {workspaceSessions.length <= 1 && <div className="cb-link-empty">{msg.linkEmpty}</div>}
               </div>
               <div className="cb-link-foot">
                 <span className="cb-link-count">
-                  当前时间线组共{' '}
-                  <strong>{workspaceSessions.filter((s) => s.linkKind !== 'none').length}</strong> 段对话
+                  {msg.linkGroupCount(workspaceSessions.filter((s) => s.linkKind !== 'none').length)}
                 </span>
                 <button className="cb-btn-primary" onClick={() => setLinkModalOpen(false)}>
-                  完成
+                  {msg.done}
                 </button>
               </div>
             </div>

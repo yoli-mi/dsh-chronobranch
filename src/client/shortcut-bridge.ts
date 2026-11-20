@@ -15,6 +15,7 @@ import type {
   ShortcutContext,
   Shortcuts,
 } from '@deepseek-ai/dsh-client-shortcuts/client';
+import { getChronoMessages, type ChronoLocale, type ChronoMessages } from '../core/i18n';
 import type { ShortcutAction, ShortcutBindings } from '../core/types';
 
 type ShortcutProfile =
@@ -27,10 +28,19 @@ type ShortcutProfile =
 
 export type ShortcutCommandHandler = (action: ShortcutAction) => void;
 
+type ShortcutLabelKey =
+  | 'scToggleExpand'
+  | 'scForkNode'
+  | 'scToggleMicro'
+  | 'scPinTile'
+  | 'scZoomL1'
+  | 'scZoomL2'
+  | 'scZoomL3';
+
 interface ActionSpec {
   readonly action: ShortcutAction;
   readonly commandId: ShortcutCommandId;
-  readonly label: string;
+  readonly labelKey: ShortcutLabelKey;
   readonly aliases: readonly string[];
   readonly defaultBinding: ShortcutBinding;
 }
@@ -55,50 +65,50 @@ const ACTION_SPECS: readonly ActionSpec[] = [
   {
     action: 'toggleExpand',
     commandId: 'chronobranch.toggle-expand' as ShortcutCommandId,
-    label: '时间线 · 展开 / 收起完整对话',
+    labelKey: 'scToggleExpand',
     aliases: ['chronobranch', 'timeline', 'expand', '时间线', '展开'],
     defaultBinding: { code: 'KeyO', modifiers: ['primary', 'alt', 'shift'] },
   },
   {
     action: 'forkNode',
     commandId: 'chronobranch.fork-node' as ShortcutCommandId,
-    label: '时间线 · 从选中节点拉出分支',
+    labelKey: 'scForkNode',
     aliases: ['chronobranch', 'timeline', 'fork', 'branch', '时间线', '分叉'],
     defaultBinding: { code: 'KeyB', modifiers: ['primary', 'alt', 'shift'] },
   },
   {
     action: 'toggleMicro',
     commandId: 'chronobranch.toggle-micro' as ShortcutCommandId,
-    label: '时间线 · 展开 / 收起微观小轴',
+    labelKey: 'scToggleMicro',
     aliases: ['chronobranch', 'timeline', 'micro', '时间线', '微观小轴'],
     defaultBinding: { code: 'KeyM', modifiers: ['primary', 'alt', 'shift'] },
   },
   {
     action: 'pinTile',
     commandId: 'chronobranch.pin-tile' as ShortcutCommandId,
-    label: '时间线 · 悬挂为屏幕磁贴',
+    labelKey: 'scPinTile',
     aliases: ['chronobranch', 'timeline', 'tile', 'pin', '时间线', '磁贴'],
     defaultBinding: { code: 'KeyT', modifiers: ['primary', 'alt', 'shift'] },
   },
   {
     action: 'zoomL1',
     commandId: 'chronobranch.zoom-l1' as ShortcutCommandId,
-    label: '时间线 · 鸟瞰视图 (L1)',
-    aliases: ['chronobranch', 'timeline', 'zoom', '时间线', '鸟瞰'],
+    labelKey: 'scZoomL1',
+    aliases: ['chronobranch', 'timeline', 'zoom', 'overview', '时间线', '鸟瞰'],
     defaultBinding: { code: 'Digit1', modifiers: ['primary', 'alt', 'shift'] },
   },
   {
     action: 'zoomL2',
     commandId: 'chronobranch.zoom-l2' as ShortcutCommandId,
-    label: '时间线 · 点线视图 (L2)',
-    aliases: ['chronobranch', 'timeline', 'zoom', '时间线', '点线'],
+    labelKey: 'scZoomL2',
+    aliases: ['chronobranch', 'timeline', 'zoom', 'dot-line', '时间线', '点线'],
     defaultBinding: { code: 'Digit2', modifiers: ['primary', 'alt', 'shift'] },
   },
   {
     action: 'zoomL3',
     commandId: 'chronobranch.zoom-l3' as ShortcutCommandId,
-    label: '时间线 · 展开视图 (L3)',
-    aliases: ['chronobranch', 'timeline', 'zoom', '时间线', '展开视图'],
+    labelKey: 'scZoomL3',
+    aliases: ['chronobranch', 'timeline', 'zoom', 'expanded', '时间线', '展开视图'],
     defaultBinding: { code: 'Digit3', modifiers: ['primary', 'alt', 'shift'] },
   },
 ];
@@ -148,13 +158,13 @@ export class NativeShortcutBridge {
    * Attach to DSH's `ctx.shortcuts` service and register all ChronoBranch timeline commands.
    * Returns a disposer that cleanly unregisters all commands and listeners.
    */
-  attach(shortcuts: Shortcuts): () => void {
+  attach(shortcuts: Shortcuts, getLocale: () => ChronoLocale = () => 'zh'): () => void {
     const disposers: Array<() => void> = [];
 
     for (const spec of ACTION_SPECS) {
       const buildCommand = (defaults: Partial<Record<ShortcutProfile, ShortcutBinding>>): ShortcutCommand => ({
         id: spec.commandId,
-        label: () => spec.label,
+        label: () => (getChronoMessages(getLocale()) as ChronoMessages)[spec.labelKey],
         aliases: spec.aliases,
         defaults,
         regions: ['page'],

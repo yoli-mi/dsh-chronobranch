@@ -11,9 +11,11 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react';
 import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client';
 import { AssistantContentBody } from '../core/AssistantContent';
+import { getChronoMessages, type ChronoLocale } from '../core/i18n';
 import { IconArrange, IconClose, IconExpand, IconLocate, IconMinimize, IconPip } from '../core/icons';
 import { ChronoMarkdown } from '../core/markdown';
 import { CHRONOBRANCH_CSS } from '../core/styles';
+import type { ChronoLocaleStore } from './locale-store';
 import {
   TILE_GAP,
   TILE_MAX_H,
@@ -56,7 +58,8 @@ function activateTimelineTabIfPresent(): void {
   if (typeof document === 'undefined') return;
   const tabs = document.querySelectorAll<HTMLButtonElement>('[role="tablist"] [role="tab"]');
   for (const tab of Array.from(tabs)) {
-    if (tab.textContent?.trim() === '时间线') {
+    const label = tab.textContent?.trim();
+    if (label === '时间线' || label === 'Timeline') {
       if (tab.getAttribute('aria-selected') !== 'true') {
         tab.click();
       }
@@ -70,12 +73,14 @@ function hydrateDetachedTileWindow(
   tile: MagneticTileRecord,
   sourceEl: HTMLElement,
   theme: 'light' | 'dark',
+  locale: ChronoLocale,
 ): boolean {
   try {
+    const msg = getChronoMessages(locale);
     const doc = win.document;
     if (!doc) return false;
     doc.open();
-    doc.write('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8" /></head><body></body></html>');
+    doc.write(`<!DOCTYPE html><html lang="${locale === 'en' ? 'en' : 'zh-CN'}"><head><meta charset="utf-8" /></head><body></body></html>`);
     doc.close();
     doc.title = `${tile.node.turnLabel} · ${tile.node.title}`;
 
@@ -96,18 +101,18 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
     host.className = `cb-root cb-pip-host ${theme === 'dark' ? 'cb-theme-dark' : ''} ${tile.aiOnly ? 'cb-pip-ai-only' : ''}`;
     host.innerHTML = sourceEl.innerHTML;
 
-    // Replace tools bar with a clean working `完整 / 仅AI` toggle inside the detached DSH window
+    // Replace tools bar with a clean working `Full / AI Only` toggle inside the detached DSH window
     host.querySelectorAll('.cb-resize-handle').forEach((n) => n.remove());
     const tools = host.querySelector('.cb-tile-tools');
     if (tools) {
       tools.innerHTML = '';
       const aiBtn = doc.createElement('button');
       aiBtn.className = `cb-tile-btn ${tile.aiOnly ? 'cb-active' : ''}`;
-      aiBtn.textContent = tile.aiOnly ? '仅AI' : '完整';
+      aiBtn.textContent = tile.aiOnly ? msg.tileAiOnly : msg.tileFull;
       aiBtn.addEventListener('click', () => {
         const next = host.classList.toggle('cb-pip-ai-only');
         aiBtn.classList.toggle('cb-active', next);
-        aiBtn.textContent = next ? '仅AI' : '完整';
+        aiBtn.textContent = next ? msg.tileAiOnly : msg.tileFull;
       });
       tools.appendChild(aiBtn);
     }
@@ -121,7 +126,7 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
         const span = btn.querySelector('span');
         if (span) {
           const prev = span.textContent;
-          span.textContent = '已复制';
+          span.textContent = msg.copied;
           win.setTimeout(() => {
             span.textContent = prev;
           }, 1400);
@@ -139,11 +144,20 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 export interface TileOverlayProps {
   readonly tileStore: TileStore;
   readonly sessionsApi: ISessions;
+  readonly localeStore?: ChronoLocaleStore;
   readonly getUiWorkspace?: () => { readonly openSession?: (target: SessionId) => void } | undefined;
 }
 
-export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOverlayProps) {
+const noopSubscribe = () => () => {};
+const defaultLocaleSnapshot = (): ChronoLocale => 'zh';
+
+export function TileOverlay({ tileStore, sessionsApi, localeStore, getUiWorkspace }: TileOverlayProps) {
   const { tiles } = useSyncExternalStore(tileStore.subscribe, tileStore.getSnapshot);
+  const locale = useSyncExternalStore(
+    localeStore ? localeStore.subscribe : noopSubscribe,
+    localeStore ? localeStore.getSnapshot : defaultLocaleSnapshot,
+  );
+  const msg = getChronoMessages(locale);
   const [theme, setTheme] = useState<'light' | 'dark'>(readHostTheme);
   const [snappedId, setSnappedId] = useState<string | null>(null);
   const [activeOpId, setActiveOpId] = useState<string | null>(null);
@@ -344,7 +358,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
       const screenTop = Math.round((window.screenY || 60) + tile.y);
       const durationText =
         tile.node.status === 'streaming'
-          ? '生成中…'
+          ? msg.streaming
           : tile.node.stats.durationMs
             ? `${(tile.node.stats.durationMs / 1000).toFixed(1)}s`
             : '';
@@ -367,6 +381,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
             aiSegments: tile.node.aiSegments,
             choices: tile.node.choices,
             theme,
+            locale,
             aiOnly: tile.aiOnly,
             x: screenLeft,
             y: screenTop,
@@ -391,7 +406,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
       if (pip && el) {
         try {
           const pipWin = await pip.requestWindow({ width: w, height: h });
-          if (hydrateDetachedTileWindow(pipWin, tile, el, theme)) {
+          if (hydrateDetachedTileWindow(pipWin, tile, el, theme, locale)) {
             tileStore.remove(tile.id);
             return;
           }
@@ -400,12 +415,9 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
         }
       }
 
-      showTileHint(
-        tile.id,
-        '桌面悬浮桥未连接：请完全退出并重启一次 DeepSeek Harness 桌面端后即可无缝弹出无边框置顶磁贴。',
-      );
+      showTileHint(tile.id, msg.tilePopOutBlocked);
     },
-    [theme, tileStore, showTileHint],
+    [theme, locale, msg, tileStore, showTileHint],
   );
 
   if (tiles.length === 0) return null;
@@ -449,7 +461,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
                 startOp(e, tile, 'drag');
               }}
               onDoubleClick={() => tileStore.patchTile(tile.id, { minimized: !tile.minimized })}
-              title="拖动可自由悬挂于 DSH 任意位置并自动磁吸对齐；双击折叠"
+              title={tile.minimized ? msg.tileRestoreTip : msg.tileMinimizeTip}
             >
               <div className="cb-tile-id">
                 <span className="cb-dot" style={{ background: color }} />
@@ -460,7 +472,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
                 {tiles.length >= 2 && (
                   <button
                     className="cb-tile-btn"
-                    title="一键将全部磁贴自动吸附并排"
+                    title={msg.tileArrangeTip}
                     onClick={(e) => {
                       e.stopPropagation();
                       tileStore.arrangeSideBySide();
@@ -472,19 +484,19 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
                 {!tile.minimized && (
                   <button
                     className={`cb-tile-btn ${tile.aiOnly ? 'cb-active' : ''}`}
-                    title={tile.aiOnly ? '切换为完整对话（含提问）' : '切换为仅看 AI 回复'}
+                    title={tile.aiOnly ? msg.tileAiOnlyTip : msg.tileFullTip}
                     onClick={(e) => {
                       e.stopPropagation();
                       tileStore.patchTile(tile.id, { aiOnly: !tile.aiOnly });
                     }}
                   >
-                    <span>{tile.aiOnly ? '仅AI' : '完整'}</span>
+                    <span>{tile.aiOnly ? msg.tileAiOnly : msg.tileFull}</span>
                   </button>
                 )}
                 {!tile.minimized && (
                   <button
                     className="cb-tile-btn"
-                    title="尝试以 DSH 原生独立子窗口悬浮到桌面"
+                    title={msg.tilePopOutTip}
                     onClick={(e) => {
                       e.stopPropagation();
                       const tileEl = (e.currentTarget as HTMLElement).closest('.cb-tile') as HTMLElement | null;
@@ -496,7 +508,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
                 )}
                 <button
                   className="cb-tile-btn"
-                  title="跳转回该对话在时间线中的对应节点"
+                  title={msg.tileLocateTip}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleLocate(tile);
@@ -506,7 +518,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
                 </button>
                 <button
                   className="cb-tile-btn"
-                  title={tile.minimized ? '展开磁贴' : '折叠为顶部条'}
+                  title={tile.minimized ? msg.tileRestoreTip : msg.tileMinimizeTip}
                   onClick={(e) => {
                     e.stopPropagation();
                     tileStore.patchTile(tile.id, { minimized: !tile.minimized });
@@ -516,7 +528,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
                 </button>
                 <button
                   className="cb-tile-btn"
-                  title="取消磁贴"
+                  title={msg.tileCloseTip}
                   onClick={(e) => {
                     e.stopPropagation();
                     tileStore.remove(tile.id);
@@ -540,7 +552,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
                         <span>YOU</span>
                         <span>{tile.node.timestamp}</span>
                       </div>
-                      <ChronoMarkdown text={tile.node.userText} />
+                      <ChronoMarkdown text={tile.node.userText} locale={locale} />
                     </div>
                   )}
                   <div className="cb-bubble cb-bubble-ai">
@@ -550,7 +562,7 @@ export function TileOverlay({ tileStore, sessionsApi, getUiWorkspace }: TileOver
                         {tile.node.stats.durationMs ? `${(tile.node.stats.durationMs / 1000).toFixed(1)}s` : ''}
                       </span>
                     </div>
-                    <AssistantContentBody node={tile.node} />
+                    <AssistantContentBody node={tile.node} locale={locale} />
                   </div>
                 </div>
 

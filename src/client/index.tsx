@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client';
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { Shortcuts } from '@deepseek-ai/dsh-client-shortcuts/client';
 import { ChronoCanvas } from '../core/ChronoCanvas';
+import { getChronoMessages } from '../core/i18n';
 import { IconFork } from '../core/icons';
 import { injectChronoStyles } from '../core/styles';
 import type { ChronoActions, ChronoNode, WorkspaceSessionOption } from '../core/types';
@@ -34,6 +35,7 @@ import {
   type ChatSnapshotLike,
   type ConversationStateLike,
 } from './dsh-adapter';
+import { ChronoLocaleStore, type DshLocaleServiceLike } from './locale-store';
 import { ChronoMetaStore } from './meta-store';
 import { NativeShortcutBridge } from './shortcut-bridge';
 import { TileOverlay } from './TileOverlay';
@@ -72,6 +74,7 @@ interface ChronoViewSlotProps extends ConvViewProps {
   readonly metaStore: ChronoMetaStore;
   readonly tileStore: TileStore;
   readonly dockStore: ComposerDockStore;
+  readonly localeStore: ChronoLocaleStore;
   readonly shortcutBridge: NativeShortcutBridge;
   readonly snapshotCache: Map<string, CachedSessionData>;
 }
@@ -84,7 +87,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ChronoErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+class ChronoErrorBoundary extends Component<{ children: ReactNode; errorTitle?: string }, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -109,7 +112,9 @@ class ChronoErrorBoundary extends Component<{ children: ReactNode }, ErrorBounda
             minHeight: 320,
           }}
         >
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>ChronoBranch 渲染遇到异常</div>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>
+            {this.props.errorTitle ?? 'ChronoBranch Render Error'}
+          </div>
           <pre
             style={{
               padding: 12,
@@ -185,7 +190,8 @@ function activateTimelineTabIfNeeded(): boolean {
   if (typeof document === 'undefined') return false;
   const tabs = document.querySelectorAll<HTMLButtonElement>('[role="tablist"] [role="tab"]');
   for (const tab of Array.from(tabs)) {
-    if (tab.textContent?.trim() === '时间线') {
+    const label = tab.textContent?.trim();
+    if (label === '时间线' || label === 'Timeline') {
       if (tab.getAttribute('aria-selected') !== 'true') {
         tab.click();
       }
@@ -267,6 +273,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
     metaStore,
     tileStore,
     dockStore,
+    localeStore,
     shortcutBridge,
     snapshotCache,
   } = props;
@@ -276,6 +283,8 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
   const useWorkspacesHook = typeof props.useWorkspaces === 'function' ? props.useWorkspaces : noopUseWorkspaces;
 
   const hostTheme = useHostTheme();
+  const locale = useSyncExternalStore(localeStore.subscribe, localeStore.getSnapshot);
+  const msg = useMemo(() => getChronoMessages(locale), [locale]);
   const currentSnapshot: ConversationSnapshot | undefined = useSession((s) => s);
   const hookConversation: ConversationStateLike | undefined = useConversationHook((s) => s);
   const currentChat: ChatSnapshotLike | undefined = useChatHook((s) => s);
@@ -385,6 +394,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
         uiConversationApi,
         snapshotCache,
         meta,
+        locale,
       }),
     [
       sessionId,
@@ -396,6 +406,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
       uiConversationApi,
       snapshotCache,
       meta,
+      locale,
     ],
   );
 
@@ -465,7 +476,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
               : 'none';
       items.push({
         id,
-        title: summary?.displayTitle || '未命名对话',
+        title: summary?.displayTitle || msg.defaultUntitled,
         updatedAt: summary?.updatedAt,
         running: summary?.running,
         linkKind,
@@ -486,7 +497,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
       workspaceName: matchedWorkspace?.title ?? deriveWorkspaceLabel(currentCwd),
       workspaceSessions: items,
     };
-  }, [listState, sessionId, workspacesState, meta]);
+  }, [listState, sessionId, workspacesState, meta, msg]);
 
   // One-time diagnostic if a non-blank open session still fails to hydrate nodes
   useEffect(() => {
@@ -538,7 +549,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
           openSessionInTimeline(sessionsApi, getUiWorkspace, sid, false);
         }
         const binding = sessionsApi.binding?.(sid);
-        if (!binding) throw new Error('目标会话尚未就绪，请稍候重试');
+        if (!binding) throw new Error(msg.errSessionNotReady);
 
         if (text.startsWith('/')) {
           await binding.session.command(text);
@@ -546,7 +557,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
         }
         const res = await binding.session.prompt([{ type: 'text', text }], 'queue');
         if (!res.ok) {
-          throw new Error(res.error?.message || '发送消息被服务端拒绝');
+          throw new Error(res.error?.message || msg.errSendRejected);
         }
       },
 
@@ -652,15 +663,18 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
           openSessionInTimeline(sessionsApi, getUiWorkspace, targetSid, false);
         }
         const binding = sessionsApi.binding?.(targetSid);
-        if (!binding) throw new Error('目标会话尚未就绪');
+        if (!binding) throw new Error(msg.errSessionNotReady);
 
-        const promptBody = `[ChronoBranch Cherry-pick 结论回流]\n${summary}\n\n请接收以上来自探索分支的已验证结论，并将其作为主线后续工作的有效上下文。`;
+        const promptBody =
+          locale === 'en'
+            ? `[ChronoBranch Cherry-Pick Summary]\n${summary}\n\nPlease incorporate these verified findings from the exploration branch into the main thread context.`
+            : `[ChronoBranch Cherry-pick 结论回流]\n${summary}\n\n请接收以上来自探索分支的已验证结论，并将其作为主线后续工作的有效上下文。`;
         const prevSnap = binding.session.getSnapshot();
         const prevOrderLen = prevSnap.chat?.order?.length ?? prevSnap.nodes?.length ?? 0;
 
         const res = await binding.session.prompt([{ type: 'text', text: promptBody }], 'queue');
         if (!res.ok) {
-          throw new Error(res.error?.message || '回流消息发送失败');
+          throw new Error(res.error?.message || msg.errMergeSendFailed);
         }
 
         const unsub = binding.session.subscribe(() => {
@@ -689,7 +703,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
                 sourceNodeId,
                 targetTrackId,
                 targetNodeId: `${targetSid}:turn:${addedSeq}`,
-                label: 'Cherry-pick 回流',
+                label: msg.cherryMergePill,
                 summary,
               });
               unsub();
@@ -699,7 +713,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
         window.setTimeout(() => unsub(), 8000);
       },
     }),
-    [sessionId, listState, sessionsApi, getUiWorkspace, metaStore, dockStore],
+    [sessionId, listState, sessionsApi, getUiWorkspace, metaStore, dockStore, locale, msg],
   );
 
   // Keep any already-pinned magnetic tiles live-synced when their source turn streams
@@ -712,6 +726,7 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
       graph={graph}
       actions={actions}
       theme={hostTheme}
+      locale={locale}
       useNativeComposer={true}
       shortcuts={shortcutState.connected ? shortcutState.bindings : meta.shortcuts}
       managedShortcuts={shortcutState.connected}
@@ -729,8 +744,9 @@ function ChronoConversationInner(props: ChronoViewSlotProps) {
 }
 
 function ChronoConversationView(props: ChronoViewSlotProps) {
+  const locale = useSyncExternalStore(props.localeStore.subscribe, props.localeStore.getSnapshot);
   return (
-    <ChronoErrorBoundary>
+    <ChronoErrorBoundary errorTitle={getChronoMessages(locale).errorTitle}>
       <ChronoConversationInner {...props} />
     </ChronoErrorBoundary>
   );
@@ -740,6 +756,7 @@ interface ComposerDockSlotProps {
   readonly sessionId?: SessionId;
   readonly session?: { readonly sessionId?: SessionId };
   readonly dockStore: ComposerDockStore;
+  readonly localeStore: ChronoLocaleStore;
   readonly sessionsApi: ISessions;
   readonly getUiWorkspace?: () => UiWorkspaceLike | undefined;
 }
@@ -748,8 +765,17 @@ interface ComposerDockSlotProps {
  * Slim status dock mounted natively into DSH's `conversation.input.dock` slot
  * directly above DSH's single unified bottom composer (no duplicate input box).
  */
-function ChronoComposerDock({ sessionId, session, dockStore, sessionsApi, getUiWorkspace }: ComposerDockSlotProps) {
+function ChronoComposerDock({
+  sessionId,
+  session,
+  dockStore,
+  localeStore,
+  sessionsApi,
+  getUiWorkspace,
+}: ComposerDockSlotProps) {
   const dock = useSyncExternalStore(dockStore.subscribe, dockStore.getSnapshot);
+  const locale = useSyncExternalStore(localeStore.subscribe, localeStore.getSnapshot);
+  const msg = getChronoMessages(locale);
   const hostTheme = useHostTheme();
 
   const activeSid = sessionId ?? session?.sessionId;
@@ -773,7 +799,7 @@ function ChronoComposerDock({ sessionId, session, dockStore, sessionsApi, getUiW
               <IconFork size="xs" />
             </span>
             <span>
-              已从 <strong>{dock.forkNotice.sourceTurnLabel}</strong> 分叉 · 请直接在下方输入框发送首条消息
+              {msg.dockForkedPrefix} <strong>{dock.forkNotice.sourceTurnLabel}</strong> {msg.dockForkedSuffix}
             </span>
           </span>
           <button
@@ -785,19 +811,19 @@ function ChronoComposerDock({ sessionId, session, dockStore, sessionsApi, getUiW
               openSessionInTimeline(sessionsApi, getUiWorkspace, sourceId, false);
             }}
           >
-            切回原对话
+            {msg.dockBackToSource}
           </button>
         </>
       ) : (
         <div className="cb-native-dock-tracks">
-          <span className="cb-native-dock-label">输入目标</span>
+          <span className="cb-native-dock-label">{msg.dockInputTarget}</span>
           <div className="cb-native-dock-chips">
             {dock.tracks.map((tr) => (
               <button
                 key={tr.id}
                 type="button"
                 className={`cb-dock-track-chip ${tr.active ? 'cb-active' : ''}`}
-                title={tr.active ? `当前底部输入框正在发送到「${tr.title}」` : `点击切换发送目标至「${tr.title}」`}
+                title={tr.active ? msg.dockActiveTip(tr.title) : msg.dockSwitchTip(tr.title)}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (tr.active) {
@@ -822,6 +848,7 @@ export function apply(ctx: ClientContext): void {
   const metaStore = new ChronoMetaStore();
   const tileStore = new TileStore();
   const dockStore = new ComposerDockStore();
+  const localeStore = new ChronoLocaleStore();
   const shortcutBridge = new NativeShortcutBridge();
   const snapshotCache = new Map<string, CachedSessionData>();
 
@@ -831,6 +858,26 @@ export function apply(ctx: ClientContext): void {
       removeStyles();
     };
   }, 'dsh-chronobranch:styles');
+
+  // Observe DOM lang attribute as fallback, and attach to DSH's reactive `ctx.locale` service
+  ctx.effect(() => localeStore.observeDocumentLang(), 'dsh-chronobranch:dom-lang');
+
+  try {
+    (ctx as unknown as { inject?: (deps: string[], fn: (sub: ClientContext) => void) => void }).inject?.(
+      ['locale'],
+      (lCtx) => {
+        lCtx.effect(() => {
+          const localeSvc = (lCtx as unknown as { get?: (k: string) => unknown }).get?.('locale') as
+            | DshLocaleServiceLike
+            | undefined;
+          if (!localeSvc) return () => {};
+          return localeStore.attachDshLocale(localeSvc);
+        }, 'dsh-chronobranch:locale');
+      },
+    );
+  } catch (err) {
+    console.warn('[dsh-chronobranch] Unable to attach to native locale service:', err);
+  }
 
   const getOptionalService = <T,>(serviceName: string): T | undefined => {
     try {
@@ -843,14 +890,14 @@ export function apply(ctx: ClientContext): void {
 
   const getUiWorkspace = (): UiWorkspaceLike | undefined => getOptionalService<UiWorkspaceLike>('uiWorkspace');
 
-  // 1. Register natively as a conversation view tab right beside `对话` and `轨迹`
+  // 1. Register natively as a conversation view tab right beside Chat / Trace (`对话` / `轨迹`)
   ctx.slots.inject('conversation.view', () =>
     ctx.slots.register(
       {
         name: 'conversation.view',
         id: 'chronobranch',
         order: 20,
-        label: '时间线',
+        label: (() => getChronoMessages(localeStore.readCurrent()).tabLabel) as unknown as string,
         inject: () => ({
           sessionsApi: ctx.sessions,
           workspacesApi: getOptionalService<IWorkspaces>('workspaces'),
@@ -859,6 +906,7 @@ export function apply(ctx: ClientContext): void {
           metaStore,
           tileStore,
           dockStore,
+          localeStore,
           shortcutBridge,
           snapshotCache,
         }),
@@ -876,6 +924,7 @@ export function apply(ctx: ClientContext): void {
         order: 5,
         inject: () => ({
           dockStore,
+          localeStore,
           sessionsApi: ctx.sessions,
           getUiWorkspace,
         }),
@@ -885,7 +934,7 @@ export function apply(ctx: ClientContext): void {
   );
 
   // 3. Mount DSH-native Magnetic Tiles into root `shell.overlay` so tiles are 100% part of DSH
-  //    and stay floating across tab switches (`对话`/`轨迹`/`时间线`) and session switches!
+  //    and stay floating across tab switches and session switches!
   ctx.slots.inject('shell.overlay', () =>
     ctx.slots.register(
       {
@@ -894,6 +943,7 @@ export function apply(ctx: ClientContext): void {
         order: 40,
         inject: () => ({
           tileStore,
+          localeStore,
           sessionsApi: ctx.sessions,
           getUiWorkspace,
         }),
@@ -903,7 +953,7 @@ export function apply(ctx: ClientContext): void {
   );
 
   // 4. Register all timeline shortcuts directly into DSH's built-in `ctx.shortcuts` service
-  //    so they appear and can be customized right inside DSH's native Settings -> 快捷键 page!
+  //    so they appear and can be customized right inside DSH's native Settings -> Shortcuts page!
   //    Defer registration by one macrotask so all required DSH core plugins (`ui-layout`, `ui-sidebar`, etc.)
   //    always claim their built-in defaults first and can never fail boot due to a third-party shortcut conflict.
   try {
@@ -919,7 +969,7 @@ export function apply(ctx: ClientContext): void {
           let detach: (() => void) | null = null;
           const timer = window.setTimeout(() => {
             if (disposed) return;
-            detach = shortcutBridge.attach(shortcutsSvc);
+            detach = shortcutBridge.attach(shortcutsSvc, () => localeStore.readCurrent());
           }, 0);
           return () => {
             disposed = true;

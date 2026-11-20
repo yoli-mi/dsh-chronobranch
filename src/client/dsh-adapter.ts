@@ -35,8 +35,14 @@ import type {
   MicroStep,
   MicroStepKind,
 } from '../core/types';
+import { getChronoMessages, type ChronoLocale } from '../core/i18n';
 import { RESTRAINED_BRANCH_PALETTE } from '../core/types';
 import type { ChronoMetaSnapshot } from './meta-store';
+
+let activeAdapterLocale: ChronoLocale = 'zh';
+function tr(zh: string, en: string): string {
+  return activeAdapterLocale === 'en' ? en : zh;
+}
 
 export type ChatSnapshotLike = Partial<ChatSnapshot> & {
   readonly nodes?: ChatSnapshot['nodes'] | readonly ConversationNode[];
@@ -144,10 +150,10 @@ function classifyToolKind(toolName: string): MicroStepKind {
 
 function summarizeText(text: string, maxLen = 115): string {
   const clean = text
-    .replace(/```[\s\S]*?```/g, '[代码片段]')
+    .replace(/```[\s\S]*?```/g, tr('[代码片段]', '[Code]'))
     .replace(/\s+/g, ' ')
     .trim();
-  if (!clean) return '（无文本输出）';
+  if (!clean) return tr('（无文本输出）', '(No text output)');
   return clean.length > maxLen ? `${clean.slice(0, maxLen)}…` : clean;
 }
 
@@ -189,7 +195,7 @@ function runningToolToStep(call: RunningToolCall): MicroStep {
     title: call.name,
     duration: 'running',
     status: 'running',
-    detail: call.argsRaw ? `Args:\n${call.argsRaw}` : '执行中…',
+    detail: call.argsRaw ? `Args:\n${call.argsRaw}` : tr('执行中…', 'Running…'),
   };
 }
 
@@ -336,7 +342,9 @@ function parseToolChoices(params: {
   return rawQuestions.map((q, idx) => {
     const qId = String(q.id ?? q.key ?? idx);
     const header = typeof q.header === 'string' && q.header.trim() ? q.header.trim() : undefined;
-    const question = String(q.question ?? q.prompt ?? q.title ?? q.text ?? header ?? `问题 ${idx + 1}`).trim();
+    const question = String(
+      q.question ?? q.prompt ?? q.title ?? q.text ?? header ?? tr(`问题 ${idx + 1}`, `Question ${idx + 1}`),
+    ).trim();
     const multiSelect = Boolean(q.multiSelect ?? q.multi_select ?? q.is_multi_select ?? q.multiple);
     const rawOpts = normalizeChoiceOptions(q.options ?? q.choices);
 
@@ -432,7 +440,9 @@ function extractPendingChoices(sessionSnap: ConversationSnapshot | undefined): A
     rawList.forEach((q, qIdx) => {
       if (!q || typeof q !== 'object') return;
       const header = typeof q.header === 'string' && q.header.trim() ? q.header.trim() : undefined;
-      const question = String(q.question ?? q.prompt ?? q.title ?? q.text ?? header ?? `待选择问题 ${qIdx + 1}`).trim();
+      const question = String(
+        q.question ?? q.prompt ?? q.title ?? q.text ?? header ?? tr(`待选择问题 ${qIdx + 1}`, `Question ${qIdx + 1}`),
+      ).trim();
       const opts = normalizeChoiceOptions(q.options ?? q.choices).map((o) => ({
         label: o.label,
         description: o.description,
@@ -514,7 +524,7 @@ function finalizeBuckets(
     const turnLabel = `${trackPrefix}${idx + 1}`;
     const hasChoices = b.choices.length > 0;
     const firstChoiceSummary = hasChoices
-      ? `【提问选择】${b.choices[0].question}`
+      ? `${tr('【提问选择】', '[Choice] ')}${b.choices[0].question}`
       : undefined;
 
     return {
@@ -522,16 +532,22 @@ function finalizeBuckets(
       trackId: sessionId,
       order: idx + 1,
       turnLabel,
-      title: firstLineTitle(b.userText, `第 ${idx + 1} 轮对话`),
+      title: firstLineTitle(b.userText, tr(`第 ${idx + 1} 轮对话`, `Turn ${idx + 1}`)),
       timestamp: formatTime(b.userTime),
       status: b.streaming ? 'streaming' : b.hasError ? 'error' : 'completed',
       atSeq: b.closingSeq ?? b.userSeq,
       pinned: pinnedSet.has(nodeId),
       userText: b.userText,
       aiSummary: b.streaming
-        ? summarizeText(fullAi || firstChoiceSummary || '正在生成回复并调用工具…', 115)
+        ? summarizeText(fullAi || firstChoiceSummary || tr('正在生成回复并调用工具…', 'Generating reply and running tools…'), 115)
         : summarizeText(fullAi || firstChoiceSummary || '', 115),
-      aiFullText: fullAi || (hasChoices ? '' : b.streaming ? '正在生成中…' : '（本轮仅包含工具调用或系统事件）'),
+      aiFullText:
+        fullAi ||
+        (hasChoices
+          ? ''
+          : b.streaming
+            ? tr('正在生成中…', 'Streaming…')
+            : tr('（本轮仅包含工具调用或系统事件）', '(Tool calls or system events only)')),
       aiSegments: b.aiSegments.length > 0 ? b.aiSegments : undefined,
       codeLang: lang,
       codeSnippet: code,
@@ -614,7 +630,7 @@ function buildFromChatStore(
   const buckets: TurnBucket[] = [];
   let current: TurnBucket | null = null;
 
-  const ensureBucket = (seq: number, time: number, fallbackUser = '（会话延续）'): TurnBucket => {
+  const ensureBucket = (seq: number, time: number, fallbackUser = tr('（会话延续）', '(Continued)')): TurnBucket => {
     if (!current) {
       current = {
         turnNumber: buckets.length + 1,
@@ -646,7 +662,7 @@ function buildFromChatStore(
     if (viewNode.kind === 'user' || viewNode.kind === 'steering') {
       const seq = typeof data.seq === 'number' ? data.seq : viewNode.anchorSeq;
       const time = typeof data.time === 'number' ? data.time : Date.now();
-      const text = extractTextFromContent(data.content ?? data.text) || '（图片或附件消息）';
+      const text = extractTextFromContent(data.content ?? data.text) || tr('（图片或附件消息）', '(Image or attachment)');
       current = {
         turnNumber: buckets.length + 1,
         userSeq: seq,
@@ -679,7 +695,7 @@ function buildFromChatStore(
         b.microSteps.push({
           id: `think-${key}`,
           kind: 'thinking',
-          title: stepData.status === 'running' ? '实时思考中' : '思考推理',
+          title: stepData.status === 'running' ? tr('实时思考中', 'Thinking…') : tr('思考推理', 'Reasoning'),
           duration: stepData.status === 'running' ? 'live' : formatDuration(durMs),
           status: stepData.status === 'running' ? 'running' : 'success',
           detail: reasoning,
@@ -735,9 +751,9 @@ function buildFromChatStore(
       b.microSteps.push({
         id: `compact-${key}`,
         kind: 'thinking',
-        title: '/compact 压缩上下文',
+        title: tr('/compact 压缩上下文', '/compact Context'),
         status: 'success',
-        detail: mc.compaction?.summary ?? '已完成上下文压缩检查点',
+        detail: mc.compaction?.summary ?? tr('已完成上下文压缩检查点', 'Context compaction checkpoint completed'),
       });
       continue;
     }
@@ -745,7 +761,7 @@ function buildFromChatStore(
     if (viewNode.kind === 'turn-error') {
       const b = ensureBucket(viewNode.anchorSeq, typeof data.time === 'number' ? data.time : Date.now());
       b.hasError = true;
-      const msg = typeof data.message === 'string' ? data.message : '执行失败';
+      const msg = typeof data.message === 'string' ? data.message : tr('执行失败', 'Execution failed');
       appendAssistantText(b, `[Error] ${msg}`);
     }
   }
@@ -779,7 +795,7 @@ function buildFromLegacyNodes(
   const buckets: TurnBucket[] = [];
   let current: TurnBucket | null = null;
 
-  const ensureBucket = (seq: number, time: number, fallbackUser = '（会话延续）'): TurnBucket => {
+  const ensureBucket = (seq: number, time: number, fallbackUser = tr('（会话延续）', '(Continued)')): TurnBucket => {
     if (!current) {
       current = {
         turnNumber: buckets.length + 1,
@@ -801,7 +817,7 @@ function buildFromLegacyNodes(
 
   for (const node of legacyNodes) {
     if (node.kind === 'user' || node.kind === 'steering') {
-      const text = extractTextFromContent(node.content) || '（图片或附件消息）';
+      const text = extractTextFromContent(node.content) || tr('（图片或附件消息）', '(Image or attachment)');
       current = {
         turnNumber: buckets.length + 1,
         userSeq: node.seq,
@@ -832,7 +848,7 @@ function buildFromLegacyNodes(
         b.microSteps.push({
           id: `think-${node.seq}`,
           kind: 'thinking',
-          title: '思考推理',
+          title: tr('思考推理', 'Reasoning'),
           duration: formatDuration(durMs),
           status: 'success',
           detail: reasoning,
@@ -874,7 +890,7 @@ function buildFromLegacyNodes(
   }
 
   if (partial || runningCalls.length > 0 || sessionSnap?.running) {
-    const b = ensureBucket(Date.now(), Date.now(), '（执行中…）');
+    const b = ensureBucket(Date.now(), Date.now(), tr('（执行中…）', '(Running…)'));
     b.streaming = true;
     if (partial) {
       const pText = extractAssistantText(partial.blocks);
@@ -884,7 +900,7 @@ function buildFromLegacyNodes(
         b.microSteps.push({
           id: `partial-think-${partial.turn}-${partial.step}`,
           kind: 'thinking',
-          title: '实时思考中',
+          title: tr('实时思考中', 'Thinking…'),
           duration: 'live',
           status: 'running',
           detail: pReason,
@@ -927,7 +943,7 @@ function buildFromRawEntries(
 
   const buckets: TurnBucket[] = [];
   let current: TurnBucket | null = null;
-  const ensureBucket = (seq: number, time: number, fallbackUser = '（会话延续）'): TurnBucket => {
+  const ensureBucket = (seq: number, time: number, fallbackUser = tr('（会话延续）', '(Continued)')): TurnBucket => {
     if (!current) {
       current = {
         turnNumber: buckets.length + 1,
@@ -970,7 +986,7 @@ function buildFromRawEntries(
     if (kind === 'user' || kind === 'user_message' || kind === 'user-message' || kind === 'steering' || kind === 'prompt') {
       const text =
         extractTextFromContent(payload.content ?? payload.parts ?? payload.text ?? payload.message) ||
-        '（图片或附件消息）';
+        tr('（图片或附件消息）', '(Image or attachment)');
       current = {
         turnNumber: buckets.length + 1,
         userSeq: seq,
@@ -1011,7 +1027,7 @@ function buildFromRawEntries(
         b.microSteps.push({
           id: `think-raw-${seq}`,
           kind: 'thinking',
-          title: '思考推理',
+          title: tr('思考推理', 'Reasoning'),
           status: 'success',
           detail: reasoning,
         });
@@ -1296,6 +1312,7 @@ export function buildDshChronoGraph(params: {
   };
   readonly snapshotCache: ReadonlyMap<string, CachedSessionData>;
   readonly meta: ChronoMetaSnapshot;
+  readonly locale?: ChronoLocale;
 }): ChronoGraph {
   const {
     sessionId,
@@ -1307,7 +1324,10 @@ export function buildDshChronoGraph(params: {
     uiConversationApi,
     snapshotCache,
     meta,
+    locale = 'zh',
   } = params;
+  activeAdapterLocale = locale;
+  const msg = getChronoMessages(locale);
   const byId: Record<SessionId, SessionSummary> = (listState?.byId ?? {}) as Record<SessionId, SessionSummary>;
   const subagentsByParent = listState?.subagentsByParent ?? ({} as SessionListState['subagentsByParent']);
 
@@ -1319,7 +1339,7 @@ export function buildDshChronoGraph(params: {
   const pinnedSet = new Set(meta.pinnedNodeIds);
   const mergeTargetMap = new Map<string, { trackTitle: string; summary: string }>();
   meta.mergeLinks.forEach((ml) => {
-    const srcTitle = byId[ml.sourceTrackId as SessionId]?.displayTitle ?? '分支';
+    const srcTitle = byId[ml.sourceTrackId as SessionId]?.displayTitle ?? msg.defaultBranchTitle;
     mergeTargetMap.set(ml.targetNodeId, { trackTitle: srcTitle, summary: ml.summary });
   });
 
@@ -1412,12 +1432,12 @@ export function buildDshChronoGraph(params: {
             trackId: sid,
             order: 1,
             turnLabel: 'NEW',
-            title: '新分支起点',
+            title: msg.forkStarterTitle,
             timestamp: formatTime(summary?.updatedAt),
             status: 'idle',
-            userText: '已从父节点分叉并继承前缀上下文',
-            aiSummary: '请直接在底部输入框发送首条消息，将自动开启本分支的第一轮对话。',
-            aiFullText: '已从父节点分叉并继承前缀上下文，请直接在底部输入框发送首条消息。',
+            userText: msg.forkStarterUser,
+            aiSummary: msg.forkStarterSummary,
+            aiFullText: msg.forkStarterFull,
             microSteps: [],
             stats: { toolCount: 0, filesChanged: 0 },
             placeholder: false,
@@ -1432,21 +1452,26 @@ export function buildDshChronoGraph(params: {
             order: 1,
             turnLabel: `${prefix}1`,
             title: isLoading
-              ? '正在加载对话历史…'
-              : summary?.displayTitle || (isPrimaryRoot ? '当前对话' : isLinkedPeerRoot ? '关联对话' : '分支会话'),
+              ? msg.loadingHistoryTitle
+              : summary?.displayTitle ||
+                (isPrimaryRoot
+                  ? msg.defaultCurrentChat
+                  : isLinkedPeerRoot
+                    ? msg.defaultLinkedTitle
+                    : msg.defaultBranchTitle),
             timestamp: formatTime(summary?.updatedAt),
             status: isLoading || summary?.running ? 'streaming' : 'idle',
             userText: isBlank
-              ? '新会话（尚未发送首条消息）'
+              ? msg.blankSessionUser
               : isLoading
-                ? '正在从 DSH 本地日志加载轮次…'
-                : '点击此节点加载该对话完整时间线',
+                ? msg.loadingHistoryUser
+                : msg.unhydratedUser,
             aiSummary: isBlank
-              ? '可直接在下方输入框发送消息开始对话。'
+              ? msg.blankSessionSummary
               : isLoading
-                ? '历史消息加载完成后将自动按时间次序展开为点线。'
-                : '该对话历史尚未加载到本地视口，单击圆点即可加载并同时查看。',
-            aiFullText: isBlank ? '新会话，发送消息后节点将自动出现。' : '单击加载完整对话历史。',
+                ? msg.loadingHistorySummary
+                : msg.unhydratedSummary,
+            aiFullText: isBlank ? msg.blankSessionFull : msg.unhydratedFull,
             microSteps: [],
             stats: { toolCount: 0, filesChanged: 0 },
             placeholder: !isBlank && !isLoading,
@@ -1475,7 +1500,9 @@ export function buildDshChronoGraph(params: {
           : isLinkedPeerRoot
             ? 'linked-peer'
             : 'human-branch',
-      title: summary?.displayTitle || (isPrimaryRoot ? '主线对话' : isLinkedPeerRoot ? '关联对话' : '分支'),
+      title:
+        summary?.displayTitle ||
+        (isPrimaryRoot ? msg.defaultMainTitle : isLinkedPeerRoot ? msg.defaultLinkedTitle : msg.defaultBranchTitle),
       status: savedMeta?.status ?? 'active',
       parentTrackId: hasParentInGraph ? effectiveParentId : undefined,
       forkFromNodeId: hasParentInGraph ? savedMeta?.forkFromNodeId : undefined,
@@ -1534,9 +1561,9 @@ export function buildDshChronoGraph(params: {
                 title: item.title || `Subagent ${idx + 1}`,
                 timestamp: '--:--',
                 status: item.running ? ('streaming' as const) : ('completed' as const),
-                userText: '[Agent 自动派生任务]',
-                aiSummary: item.running ? '子代理正在后台执行中…' : '子代理已完成，点击可查看执行轨迹。',
-                aiFullText: item.running ? '子代理正在后台执行中…' : '子代理已完成。',
+                userText: msg.subagentUser,
+                aiSummary: item.running ? msg.subagentRunning : msg.subagentDoneSummary,
+                aiFullText: item.running ? msg.subagentRunning : msg.subagentDoneFull,
                 microSteps: [],
                 stats: { toolCount: 0, filesChanged: 0 },
                 placeholder: true,

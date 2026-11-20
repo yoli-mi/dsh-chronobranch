@@ -3,31 +3,39 @@
  * ChronoCanvas expanded cards and DSH root-level Magnetic Tiles (`shell.overlay`).
  */
 
+import { getChronoMessages, type ChronoLocale } from './i18n';
 import { IconCheck } from './icons';
 import { ChronoMarkdown } from './markdown';
 import type { AgentChoicePrompt, ChronoNode } from './types';
 
-export function AgentChoiceCard({ choice }: { readonly choice: AgentChoicePrompt }) {
+export function AgentChoiceCard({
+  choice,
+  locale = 'zh',
+}: {
+  readonly choice: AgentChoicePrompt;
+  readonly locale?: ChronoLocale;
+}) {
+  const msg = getChronoMessages(locale);
   const statusLabel =
     choice.status === 'waiting'
-      ? '等待选择'
+      ? msg.choiceWaiting
       : choice.status === 'cancelled'
-        ? '已取消'
+        ? msg.choiceCancelled
         : choice.status === 'interrupted'
-          ? '已中断'
-          : '已回答';
+          ? msg.choiceInterrupted
+          : msg.choiceAnswered;
 
   return (
     <div className={`cb-choice-card cb-choice-${choice.status}`}>
       <div className="cb-choice-head">
         <span className="cb-choice-title">
-          {choice.header ? `AGENT 选择 · ${choice.header}` : 'AGENT 提问与选择'}
-          {choice.multiSelect ? '（多选）' : ''}
+          {msg.agentChoiceTitle(choice.header)}
+          {choice.multiSelect ? (locale === 'en' ? ' (Multi-select)' : '（多选）') : ''}
         </span>
         <span className={`cb-choice-badge cb-choice-badge-${choice.status}`}>{statusLabel}</span>
       </div>
       <div className="cb-choice-question">
-        <ChronoMarkdown text={choice.question} />
+        <ChronoMarkdown text={choice.question} locale={locale} />
       </div>
       {choice.options.length > 0 && (
         <div className="cb-choice-options">
@@ -46,26 +54,30 @@ export function AgentChoiceCard({ choice }: { readonly choice: AgentChoicePrompt
       )}
       {choice.customAnswer && (
         <div className="cb-choice-custom">
-          <span className="cb-choice-custom-tag">你的回答</span>
+          <span className="cb-choice-custom-tag">{msg.choiceCustomAnswer}</span>
           <span>{choice.customAnswer}</span>
         </div>
       )}
-      {choice.status === 'waiting' && (
-        <div className="cb-choice-hint">等待你在下方原生对话栏提交选择</div>
-      )}
+      {choice.status === 'waiting' && <div className="cb-choice-hint">{msg.choiceWaitingHint}</div>}
     </div>
   );
 }
 
-export function AssistantContentBody({ node }: { readonly node: ChronoNode }) {
+export function AssistantContentBody({
+  node,
+  locale = 'zh',
+}: {
+  readonly node: ChronoNode;
+  readonly locale?: ChronoLocale;
+}) {
   if (node.aiSegments && node.aiSegments.length > 0) {
     return (
       <div className="cb-ai-segments">
         {node.aiSegments.map((seg) =>
           seg.kind === 'markdown' ? (
-            <ChronoMarkdown key={seg.id} text={seg.text} />
+            <ChronoMarkdown key={seg.id} text={seg.text} locale={locale} />
           ) : (
-            <AgentChoiceCard key={seg.id} choice={seg.choice} />
+            <AgentChoiceCard key={seg.id} choice={seg.choice} locale={locale} />
           ),
         )}
       </div>
@@ -74,9 +86,9 @@ export function AssistantContentBody({ node }: { readonly node: ChronoNode }) {
   return (
     <div className="cb-ai-segments">
       {(node.aiFullText || !node.choices || node.choices.length === 0) && (
-        <ChronoMarkdown text={node.aiFullText || node.aiSummary} />
+        <ChronoMarkdown text={node.aiFullText || node.aiSummary} locale={locale} />
       )}
-      {node.choices && node.choices.map((ch) => <AgentChoiceCard key={ch.id} choice={ch} />)}
+      {node.choices && node.choices.map((ch) => <AgentChoiceCard key={ch.id} choice={ch} locale={locale} />)}
     </div>
   );
 }
