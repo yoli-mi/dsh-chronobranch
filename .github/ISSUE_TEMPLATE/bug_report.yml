@@ -1,0 +1,38 @@
+name: Bug Report
+description: 报告 dsh-chronobranch 中的异常或兼容性问题
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰简洁地描述遇到的现象与预期行为。
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开任意会话并切换到「时间线」标签
+        2. 点击「...」
+        3. 观察到 ...
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 运行环境
+      description: 操作系统、DSH Desktop 版本、插件 commit/版本
+      placeholder: "Windows 11 / DSH Desktop 0.2.2-rc.5 / v0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 报错日志或截图
+      description: 如有崩溃日志（`dsh-desktop/logs/crash-*.log`）或控制台输出，请贴在此处。

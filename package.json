@@ -1,0 +1,85 @@
+{
+  "name": "dsh-chronobranch",
+  "version": "0.1.0",
+  "description": "ChronoBranch for DeepSeek Harness (DSH): native dot-and-line timeline view with unified-composer branching, workspace multi-conversation linking, magnetic & desktop sticky tiles, micro-axis execution unfolding, cherry-pick merge, and native shortcuts.",
+  "author": "yoli-mi",
+  "homepage": "https://github.com/yoli-mi/dsh-chronobranch#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yoli-mi/dsh-chronobranch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yoli-mi/dsh-chronobranch/issues"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit",
+    "install:desktop": "pnpm run build && node scripts/install-desktop.mjs",
+    "uninstall:desktop": "node scripts/install-desktop.mjs --remove",
+    "prepublishOnly": "pnpm run build"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.0-rc.1",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-shortcuts": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-layout": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-workspace": "0.2.2-rc.5",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.3.1",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.8.3"
+  },
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "timeline",
+    "branching",
+    "chronobranch",
+    "ai-agent",
+    "cordis"
+  ]
+}
