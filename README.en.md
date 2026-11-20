@@ -1,3 +1,5 @@
+<div align="center">
+
 # dsh-chronobranch
 
 [![CI](https://github.com/yoli-mi/dsh-chronobranch/actions/workflows/ci.yml/badge.svg)](https://github.com/yoli-mi/dsh-chronobranch/actions/workflows/ci.yml)
@@ -5,6 +7,8 @@
 [![DSH](https://img.shields.io/badge/DeepSeek%20Harness-0.2.x-18181b.svg)](https://github.com/deepseek-ai/dsh)
 
 [中文](README.md) | English
+
+</div>
 
 **ChronoBranch** is a native horizontal dot-and-line timeline & branching canvas plugin for **DeepSeek Harness (DSH)**.  
 It registers a native **`时间线` (Timeline)** view tab directly beside DSH's built-in Chat and Trajectory tabs, automatically syncing with DSH's light/dark theme and unifying conversation branching, workspace-wide multi-conversation linking, execution micro-axes, and floating magnetic sticky tiles on a calm architectural canvas.

@@ -1,3 +1,5 @@
+<div align="center">
+
 # dsh-chronobranch
 
 [![CI](https://github.com/yoli-mi/dsh-chronobranch/actions/workflows/ci.yml/badge.svg)](https://github.com/yoli-mi/dsh-chronobranch/actions/workflows/ci.yml)
@@ -5,6 +7,8 @@
 [![DSH](https://img.shields.io/badge/DeepSeek%20Harness-0.2.x-18181b.svg)](https://github.com/deepseek-ai/dsh)
 
 中文 | [English](README.en.md)
+
+</div>
 
 **ChronoBranch** 是面向 **DeepSeek Harness (DSH)** 的原生横向点线时空分支画布插件。  
 它直接以原生视图标签 **`时间线`** 挂载在 DSH 会话顶部的 `对话` / `轨迹` 旁，自动跟随 DSH 浅色与深色主题，将长对话、分叉探索、同工作区多对话关联、Agent 执行轨迹与自由悬浮磁贴统一在一个克制清晰的点线画布中。
